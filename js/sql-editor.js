@@ -170,6 +170,31 @@
       setValue: (v) => { ta.value = v; closeAC(); refresh(); emit(); },
       focus: () => ta.focus(),
       insert: (t) => { ta.focus(); insertText(t); },
+      // Insert a snippet at the caret. opts.block puts it on its own line;
+      // opts.pick selects the first occurrence of that placeholder so the user
+      // can type straight over it.
+      insertSnippet: (text, o) => {
+        o = o || {};
+        ta.focus();
+        const s = ta.selectionStart, e = ta.selectionEnd;
+        let t = text;
+        if (o.block) {
+          const before = ta.value.slice(0, s);
+          const curLine = before.slice(before.lastIndexOf("\n") + 1);
+          if (curLine.trim() !== "") t = "\n" + t;
+        }
+        ta.value = ta.value.slice(0, s) + t + ta.value.slice(e);
+        if (o.pick) { const i = ta.value.indexOf(o.pick, s); if (i >= 0) { ta.selectionStart = i; ta.selectionEnd = i + o.pick.length; } else ta.selectionStart = ta.selectionEnd = s + t.length; }
+        else ta.selectionStart = ta.selectionEnd = s + t.length;
+        closeAC(); refresh(); emit();
+      },
+      replaceAll: (text, o) => {
+        o = o || {};
+        ta.value = text;
+        if (o.pick) { const i = text.indexOf(o.pick); if (i >= 0) { ta.selectionStart = i; ta.selectionEnd = i + o.pick.length; } else ta.selectionStart = ta.selectionEnd = text.length; }
+        else ta.selectionStart = ta.selectionEnd = text.length;
+        ta.focus(); closeAC(); refresh(); emit();
+      },
     };
   }
 

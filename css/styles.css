@@ -417,6 +417,31 @@ select.imp-input { -webkit-appearance: none; appearance: none; }
 .col-name { font-family: var(--mono); font-size: 12.5px; color: var(--label); flex: 1; }
 .col-type { font-family: var(--mono); font-size: 10.5px; color: var(--label-3); }
 
+/* SQL command toolbox */
+.sql-toolbox { padding: 0; overflow: hidden; }
+.tbx-head { font-size: 12px; font-weight: 600; color: var(--label-2); padding: 11px 16px 2px; }
+.tbx-head .muted { font-weight: 400; }
+.tbx-tabs { display: flex; gap: 4px; padding: 6px 12px 0; border-bottom: 0.5px solid var(--sep-faint); overflow-x: auto; }
+.tbx-tab { border: none; background: none; font-size: 12.5px; font-weight: 600; color: var(--label-2); padding: 6px 10px; border-radius: 7px 7px 0 0; cursor: pointer; white-space: nowrap; }
+.tbx-tab:hover { color: var(--label); background: var(--fill); }
+.tbx-tab.active { color: var(--tint-deep); box-shadow: inset 0 -2px 0 var(--tint); }
+.tbx-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px 14px; }
+.tbx-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font); font-size: 12.5px; font-weight: 500; color: var(--label); background: var(--fill); border: none; border-radius: 8px; padding: 6px 11px; cursor: pointer; transition: transform .1s var(--ease), background .15s; }
+.tbx-chip:hover { background: var(--tint-bg); color: var(--tint-deep); }
+.tbx-chip:active { transform: scale(0.96); }
+.tbx-chip .icn { width: 15px; height: 15px; color: var(--tint-deep); }
+
+/* explain panel */
+.editor-foot .ef-left { display: flex; align-items: center; gap: 14px; }
+.explain-panel { padding: 0; animation: rise .3s var(--ease) both; }
+.explain-panel .card-title .icn { width: 15px; height: 15px; vertical-align: -3px; margin-right: 5px; color: var(--tint-deep); }
+.explain-body { padding: 14px 18px 16px; }
+.explain-summary { font-size: 15px; font-weight: 600; color: var(--label); margin: 0 0 10px; }
+.explain-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
+.explain-steps li { font-size: 13.5px; color: var(--label-2); line-height: 1.5; }
+.explain-steps li b { color: var(--label); font-weight: 600; }
+.explain-steps li code { font-size: 12px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

@@ -430,16 +430,91 @@
   }
 
   // -------------------------------------------------------------- SQL tool
+  // A "build a query" toolbox: clickable snippets grouped by clause. {t} is
+  // replaced with the active table; `pick` is the placeholder to pre-select.
+  const SQL_SNIPPETS = {
+    Clauses: [
+      { label: "SELECT", icon: "table", ins: "SELECT " },
+      { label: "SELECT *", icon: "table", ins: "SELECT * " },
+      { label: "FROM", icon: "table", ins: "FROM {t}", block: true },
+      { label: "WHERE", icon: "filter", ins: "WHERE column = 'value'", pick: "column", block: true },
+      { label: "GROUP BY", icon: "group", ins: "GROUP BY column", pick: "column", block: true },
+      { label: "ORDER BY", icon: "sortDesc", ins: "ORDER BY column DESC", pick: "column", block: true },
+      { label: "HAVING", icon: "filter", ins: "HAVING COUNT(*) > 1", block: true },
+      { label: "DISTINCT", icon: "dedupe", ins: "DISTINCT " },
+      { label: "LIMIT", icon: "filter", ins: "LIMIT 10", block: true },
+    ],
+    "Text cleanup": [
+      { label: "TRIM", icon: "textformat", ins: "TRIM(column)", pick: "column" },
+      { label: "UPPER", icon: "textformat", ins: "UPPER(column)", pick: "column" },
+      { label: "LOWER", icon: "textformat", ins: "LOWER(column)", pick: "column" },
+      { label: "REPLACE", icon: "replace", ins: "REPLACE(column, 'old', 'new')", pick: "column" },
+      { label: "SUBSTR", icon: "textformat", ins: "SUBSTR(column, 1, 4)", pick: "column" },
+      { label: "text → number", icon: "hash", ins: "CAST(REPLACE(REPLACE(column, '$', ''), ',', '') AS REAL)", pick: "column" },
+    ],
+    Aggregate: [
+      { label: "COUNT(*)", icon: "hash", ins: "COUNT(*)" },
+      { label: "SUM", icon: "hash", ins: "SUM(column)", pick: "column" },
+      { label: "AVG", icon: "hash", ins: "AVG(column)", pick: "column" },
+      { label: "MIN", icon: "hash", ins: "MIN(column)", pick: "column" },
+      { label: "MAX", icon: "hash", ins: "MAX(column)", pick: "column" },
+      { label: "… AS name", icon: "textformat", ins: " AS alias", pick: "alias" },
+    ],
+    Join: [
+      { label: "JOIN … ON", icon: "merge", ins: "JOIN other b ON a.key = b.key", pick: "other", block: true },
+      { label: "LEFT JOIN … ON", icon: "merge", ins: "LEFT JOIN other b ON a.key = b.key", pick: "other", block: true },
+      { label: "IS NULL", icon: "info", ins: "IS NULL" },
+    ],
+    Logic: [
+      { label: "CASE WHEN", icon: "branch", ins: "CASE WHEN column = 'x' THEN 'a' ELSE 'b' END", pick: "column" },
+      { label: "COALESCE", icon: "branch", ins: "COALESCE(column, 0)", pick: "column" },
+      { label: "AND", icon: "plus", ins: "AND " },
+      { label: "OR", icon: "plus", ins: "OR " },
+      { label: "<> (not equal)", icon: "replace", ins: "<> " },
+    ],
+    Templates: [
+      { label: "Show a table", icon: "table", ins: "SELECT *\nFROM {t};", repl: true },
+      { label: "Count the rows", icon: "hash", ins: "SELECT COUNT(*) AS n\nFROM {t};", repl: true },
+      { label: "Total by group (pivot)", icon: "group", ins: "SELECT column, SUM(amount) AS total\nFROM {t}\nGROUP BY column\nORDER BY total DESC;", pick: "column", repl: true },
+      { label: "Find duplicates", icon: "dedupe", ins: "SELECT column, COUNT(*) AS n\nFROM {t}\nGROUP BY column\nHAVING COUNT(*) > 1;", pick: "column", repl: true },
+      { label: "Join two tables", icon: "merge", ins: "SELECT a.*, b.column\nFROM {t} a\nJOIN other_table b ON a.key = b.key;", pick: "other_table", repl: true },
+    ],
+  };
+
+  function renderTbxChips() {
+    const tab = S.sqlTab || "Clauses";
+    const list = SQL_SNIPPETS[tab] || [];
+    const host = $("#tbxChips");
+    if (!host) return;
+    host.innerHTML = list.map((s, i) => `<button class="tbx-chip" data-i="${i}">${s.icon ? ICN(s.icon) : ""}<span>${escapeHtml(s.label)}</span></button>`).join("");
+    $$("#tbxChips .tbx-chip").forEach((b) => (b.onclick = () => sqlSnippet(list[+b.dataset.i])));
+  }
+  function sqlSnippet(snip) {
+    if (!S.sqlEd) return;
+    const text = snip.ins.replace(/\{t\}/g, S.table || "table");
+    if (snip.repl) S.sqlEd.replaceAll(text, { pick: snip.pick });
+    else S.sqlEd.insertSnippet(text, { pick: snip.pick, block: snip.block });
+  }
+
   function renderSqlTool() {
     $("#tool").innerHTML = `
       <div class="tool-inner">
+        <div class="card sql-toolbox">
+          <div class="tbx-head">Build a query <span class="muted">· tap a command to drop it into the editor</span></div>
+          <div class="tbx-tabs">${Object.keys(SQL_SNIPPETS).map((c) => `<button class="tbx-tab ${c === (S.sqlTab || "Clauses") ? "active" : ""}" data-tab="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")}</div>
+          <div id="tbxChips" class="tbx-chips"></div>
+        </div>
         <div class="editor-card">
           <div id="sqlEditorHost"></div>
           <div class="editor-foot">
-            <span class="hint-text">⌘/Ctrl + Return to run · Tab indents · type for autocomplete</span>
+            <div class="ef-left">
+              <button class="btn-plain" id="explainBtn">${ICN("book")}<span>Explain</span></button>
+              <span class="hint-text">⌘/Ctrl+Return to run · type for autocomplete</span>
+            </div>
             <button class="btn-filled" id="runBtn">${ICN("play")}<span>Run</span></button>
           </div>
         </div>
+        <div id="explainPanel" class="card explain-panel" hidden></div>
         <div class="result-card card">
           <div class="card-head"><span class="card-title">Result <span class="muted">· tap a column to sort</span></span>
             <span class="card-actions"><button class="btn-soft" id="dlCsv">${ICN("download")}<span>Export CSV</span></button><button class="btn-soft" id="cpRes">${ICN("copy")}<span>Copy</span></button></span></div>
@@ -447,7 +522,17 @@
         </div>
       </div>`;
     S.sqlEd = LL.makeSqlEditor($("#sqlEditorHost"), { value: S.sqlQuery, onChange: (v) => (S.sqlQuery = v), onRun: runSql });
+    $$(".tbx-tab").forEach((b) => (b.onclick = () => { S.sqlTab = b.dataset.tab; $$(".tbx-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === S.sqlTab)); renderTbxChips(); }));
+    renderTbxChips();
     $("#runBtn").onclick = runSql;
+    $("#explainBtn").onclick = () => {
+      const ex = LL.explainSQL(S.sqlQuery);
+      const p = $("#explainPanel");
+      p.innerHTML = `<div class="card-head"><span class="card-title">${ICN("book")} In plain English</span><button class="sheet-x" id="explainClose">✕</button></div>
+        <div class="explain-body"><p class="explain-summary">${ex.summary}</p>${ex.steps.length ? `<ol class="explain-steps">${ex.steps.map((s) => `<li>${s}</li>`).join("")}</ol>` : ""}</div>`;
+      p.hidden = false;
+      $("#explainClose").onclick = () => { p.hidden = true; };
+    };
     $("#dlCsv").onclick = () => { if (S.lastSql && S.lastSql.values.length) dlResult(S.lastSql.columns, S.lastSql.values, S.table || "result"); else toast("Run a query first."); };
     $("#cpRes").onclick = () => { if (S.lastSql && S.lastSql.values.length) copyResult(S.lastSql.columns, S.lastSql.values); else toast("Run a query first."); };
     // The free sandbox runs immediately so there's always data on screen. A
