@@ -360,6 +360,24 @@
       }),
     },
 
+    fillUp: {
+      apply(t, s) {
+        const last = {};
+        for (let i = t.rows.length - 1; i >= 0; i--) {
+          const r = t.rows[i];
+          (s.columns || []).forEach((c) => {
+            if (isBlank(r[c])) { if (last[c] !== undefined) r[c] = last[c]; }
+            else last[c] = r[c];
+          });
+        }
+        return t;
+      },
+      m: (s) => ({
+        label: "Filled Up",
+        expr: `Table.FillUp(PREV, {${(s.columns || []).map((c) => `"${c}"`).join(", ")}})`,
+      }),
+    },
+
     merge: {
       // Power Query's "Merge Queries" = a join. We bring matching columns from
       // a second table (left-outer, so unmatched left rows survive with nulls).
@@ -520,5 +538,84 @@
     return s.toLowerCase();
   }
 
-  LL.PQ = { run, toM, tablesEqual, clone, parseNumber, parseDate, properCase, OPS };
+  // Parse a generated M query back into our step model (Advanced Editor). It
+  // recognizes the functions we emit; an unrecognized line throws, the way a
+  // real editor rejects invalid M.
+  function strs(s) { return (s.match(/"((?:[^"\\]|\\.)*)"/g) || []).map((x) => x.slice(1, -1)); }
+  function parsePred(p, kind) {
+    let m, r = null;
+    if ((m = p.match(/^\[([^\]]+)\]\s*<>\s*null\s+and\s+\[[^\]]+\]\s*<>\s*""$/))) r = { column: m[1], test: "notEmpty", value: "" };
+    else if ((m = p.match(/^\[([^\]]+)\]\s*=\s*null\s+or\s+\[[^\]]+\]\s*=\s*""$/))) r = { column: m[1], test: "isEmpty", value: "" };
+    else if ((m = p.match(/^not\s+Text\.Contains\(\[([^\]]+)\],\s*"([^"]*)"\)$/))) r = { column: m[1], test: "notContains", value: m[2] };
+    else if ((m = p.match(/^Text\.Contains\(\[([^\]]+)\],\s*"([^"]*)"\)$/))) r = { column: m[1], test: "contains", value: m[2] };
+    else if ((m = p.match(/^\[([^\]]+)\]\s*<>\s*"([^"]*)"$/))) r = { column: m[1], test: "notEquals", value: m[2] };
+    else if ((m = p.match(/^\[([^\]]+)\]\s*=\s*"([^"]*)"$/))) r = { column: m[1], test: "equals", value: m[2] };
+    else if ((m = p.match(/^\[([^\]]+)\]\s*>\s*([\d.]+)$/))) r = { column: m[1], test: "gt", value: m[2] };
+    else if ((m = p.match(/^\[([^\]]+)\]\s*<\s*([\d.]+)$/))) r = { column: m[1], test: "lt", value: m[2] };
+    if (!r) return null;
+    return kind === "filter" ? { op: "filter", column: r.column, test: r.test, value: r.value } : r;
+  }
+  function parseExpr(e) {
+    let m;
+    if (e.startsWith("Table.TransformColumns(")) {
+      const fn = (e.match(/,\s*(Text\.\w+)/) || [])[1] || "";
+      const cols = (e.match(/\{"([^"]*)",\s*Text\.\w+/g) || []).map((x) => x.match(/\{"([^"]*)"/)[1]);
+      if (fn === "Text.Trim") return { op: "trim", columns: cols };
+      const mode = fn === "Text.Upper" ? "upper" : fn === "Text.Lower" ? "lower" : fn === "Text.Proper" ? "proper" : null;
+      return mode ? { op: "case", columns: cols, mode } : null;
+    }
+    if (e.startsWith("Table.TransformColumnTypes(")) {
+      m = e.match(/\{\{"([^"]*)",\s*type\s+(\w+)/); if (!m) return null;
+      return { op: "changeType", column: m[1], type: m[2] === "number" ? "number" : m[2] === "date" ? "date" : "text" };
+    }
+    if (e.startsWith("Table.ReplaceValue(")) {
+      m = e.match(/Table\.ReplaceValue\([^,]+,\s*"([^"]*)",\s*(null|"[^"]*"),[^{]*\{"([^"]*)"\}/); if (!m) return null;
+      return { op: "replace", column: m[3], find: m[1], replace: m[2] === "null" ? null : m[2].slice(1, -1), whole: false };
+    }
+    if (e.startsWith("Table.RemoveColumns(")) return { op: "removeColumns", columns: strs(e.replace(/^Table\.RemoveColumns\([^,]+,/, "")) };
+    if (e.startsWith("Table.Distinct(")) { const c = strs(e.replace(/^Table\.Distinct\([^,)]+/, "")); return c.length ? { op: "removeDuplicates", columns: c } : { op: "removeDuplicates" }; }
+    if (e.startsWith("Table.FillDown(")) return { op: "fillDown", columns: strs(e.replace(/^Table\.FillDown\([^,]+,/, "")) };
+    if (e.startsWith("Table.FillUp(")) return { op: "fillUp", columns: strs(e.replace(/^Table\.FillUp\([^,]+,/, "")) };
+    if (e.startsWith("Table.Sort(")) { m = e.match(/\{\{"([^"]*)",\s*Order\.(\w+)/); return m ? { op: "sort", column: m[1], dir: m[2] === "Descending" ? "desc" : "asc" } : null; }
+    if (e.startsWith("Table.SplitColumn(")) { m = e.match(/Table\.SplitColumn\([^,]+,\s*"([^"]*)",\s*Splitter\.SplitTextByDelimiter\("([^"]*)"\),\s*\{"([^"]*)",\s*"([^"]*)"\}/); return m ? { op: "split", column: m[1], delimiter: m[2], into: [m[3], m[4]] } : null; }
+    if (e.startsWith("Table.UnpivotOtherColumns(")) { m = e.match(/Table\.UnpivotOtherColumns\([^,]+,\s*\{([^}]*)\},\s*"([^"]*)",\s*"([^"]*)"/); return m ? { op: "unpivot", keep: strs("{" + m[1] + "}"), attributeName: m[2], valueName: m[3] } : null; }
+    if (e.startsWith("Table.Group(")) {
+      m = e.match(/Table\.Group\([^,]+,\s*\{([^}]*)\},\s*\{(.+)\}\s*\)$/); if (!m) return null;
+      const by = strs("{" + m[1] + "}");
+      const a = m[2].match(/\{"([^"]*)",\s*each\s+(List\.Sum\(\[([^\]]*)\]\)|Table\.RowCount\(_\))/); if (!a) return null;
+      return /RowCount/.test(a[2]) ? { op: "group", by, aggregations: [{ column: by[0], fn: "count", as: a[1] }] } : { op: "group", by, aggregations: [{ column: a[3], fn: "sum", as: a[1] }] };
+    }
+    if (e.startsWith("Table.ExpandTableColumn(")) {
+      m = e.match(/Table\.NestedJoin\([^,]+,\s*\{"([^"]*)"\},\s*(\w+),\s*\{"([^"]*)"\},\s*"[^"]*",\s*JoinKind\.LeftOuter\),\s*"[^"]*",\s*\{([^}]*)\}/);
+      return m ? { op: "merge", rightTable: m[2], leftKey: m[1], rightKey: m[3], bring: strs("{" + m[4] + "}") } : null;
+    }
+    if (e.startsWith("Table.SelectRows(")) { m = e.match(/each\s+(.+)\)\s*$/); return m ? parsePred(m[1].trim(), "filter") : null; }
+    if (e.startsWith("Table.AddColumn(")) {
+      m = e.match(/Table\.AddColumn\([^,]+,\s*"([^"]*)",\s*each\s+(.+)\)\s*$/); if (!m) return null;
+      const im = m[2].match(/^if\s+(.+?)\s+then\s+"([^"]*)"\s+else\s+"([^"]*)"$/); if (!im) return null;
+      const cond = parsePred(im[1].trim(), "cond"); if (!cond) return null;
+      return { op: "conditional", newColumn: m[1], cases: [{ column: cond.column, test: cond.test, value: cond.value, then: im[2] }], else: im[3] };
+    }
+    return null;
+  }
+  function parseM(text) {
+    const lines = String(text).split(/\r?\n/);
+    const steps = [];
+    let inBody = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (line === "let" || line === "") continue;
+      if (/^in\b/.test(line)) break;
+      if (/^Source\s*=/.test(line)) { inBody = true; continue; }
+      if (!inBody) continue;
+      if (!/^#"[^"]*"\s*=/.test(line)) continue;
+      const expr = line.replace(/^#"[^"]*"\s*=\s*/, "").replace(/,\s*$/, "");
+      const step = parseExpr(expr);
+      if (!step) throw new Error("Could not parse step: " + expr.slice(0, 70));
+      steps.push(step);
+    }
+    return steps;
+  }
+
+  LL.PQ = { run, toM, parseM, tablesEqual, clone, parseNumber, parseDate, properCase, OPS };
 })(window.LL = window.LL || {});
