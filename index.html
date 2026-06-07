@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ledger Lab — clean data with SQL &amp; Power Query</title>
+  <meta name="description" content="A sleek sandbox for learning to clean up messy accounting data with live SQL and Power Query." />
+  <meta name="theme-color" content="#f2f2f7" />
+
+  <!-- SF Pro on Apple devices via -apple-system; Inter + JetBrains Mono elsewhere. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- SQLite compiled to WebAssembly, vendored locally — works fully offline. -->
+  <script src="lib/sql-wasm.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- App scripts (classic, in dependency order — no build step needed) -->
+  <script src="js/data.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/csv.js"></script>
+  <script src="js/grader.js"></script>
+  <script src="js/pq.js"></script>
+  <script src="js/profile.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/lessons-sql.js"></script>
+  <script src="js/lessons-pq.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
